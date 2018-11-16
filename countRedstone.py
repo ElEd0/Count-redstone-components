@@ -7,9 +7,9 @@
 #Rails: detector rail, powered rail, activator rail
 #Misc: Note block, TNT, redstone lamps, Slime blocks
 #Slimestone: Pistons, Redstone block, Slime block, observer block
-#Carts: Minecart with chest, hopper and furnace
+#Carts: Minecart with chest, hopper, TNT and furnace
 #Filter by Ed0
-#v1.5
+#v1.8
 #Any bug or idea contact me via https://twitter.com/el_Ed0_
 #
 
@@ -29,7 +29,7 @@ sources = (69, 70, 72, 77, 131, 132, 143, 147, 148, 151, 178)
 rails = (27, 28, 157)
 misc = (25, 46, 123, 124, 165)
 slimestone = (29, 33, 152, 165, 218)
-carts = ('MinecartChest', 'MinecartHopper', 'MinecartFurnace')
+carts = ('MinecartChest', 'MinecartHopper', 'MinecartFurnace', 'MinecartTNT', 342, 343, 407, 408)
 
 subtypes = False
 filepath = ""
@@ -97,13 +97,27 @@ def idtoname(x):
 		196: "Door",
 		197: "Door",
 		218: "Observer block",
-		'MinecartChest': "Minecart Chest",
-		'MinecartHopper': "Minecart Hopper",
-		'MinecartFurnace': "Minecart Furnace",
+		'MinecartChest': "Minecart with Chest",
+		'MinecartHopper': "Minecart with Hopper",
+		'MinecartFurnace': "Minecart with Furnace",
+		'MinecartTNT': "Minecart with TNT",
+		#this are item ids, but they are used in the dictionary to reference the entities
+		342: "Minecart with Chest",
+		343: "Minecart with Hopper",
+		407: "Minecart with TNT",
+		408: "Minecart with Furnace",
     }[x]
+	
+def idtonumber(x):
+	return {
+		'MinecartChest': 342,
+		'MinecartFurnace': 343,
+		'MinecartTNT': 407,
+		'MinecartHopper': 408,
+	}[x]
 
 def costinrd(x):
-#id 27, 28 & 157 r
+#id 27, 28 & 157 rails
 	return{
 		23: 1,
 		25: 1,
@@ -140,18 +154,74 @@ def perform(level, box, options):
 	slimestoneb = options["Slimestone"]
 	cartsb = options["Carts"]
 	
-	print 'starting scanning...'
+	print 'starting scanning...'	
+	
 	total = {}
 	
+	#Entities
+	if cartsb:
+		for (chunk, slices, point) in level.getChunkSlices(box):
+			for e in chunk.Entities:
+				x = e["Pos"][0].value
+				y = e["Pos"][1].value
+				z = e["Pos"][2].value
+
+				if x >= box.minx and x < box.maxx and y >= box.miny and y < box.maxy and z >= box.minz and z < box.maxz:
+					id = e["id"].value
+				
+					if id in carts:
+						if subtypes:
+							#if subtypes activated the identifier must be number (numerical block id)
+							#so for entities the id is converted to its item id
+							identifier = idtonumber(id)
+						else:
+							identifier = idtoname(id)
+						data = 0
+						if not identifier in total:
+							total[ identifier ] = {}
+						if not data in total[ identifier ]:
+							total[ identifier ][ data ] = 0
+						total[ identifier ][ data ]+=1
+	
+	
+	
+	print 'finished scanning entities'
+	
 	#Components
+	
+	#progress stuff
+	tx = box.maxx - box.minx
+	tz = box.maxz - box.minz
+	ty = box.maxy - box.miny
+	
+	if tx < 0:
+		tx = tx * -1
+	if tz < 0:
+		tz = tz * -1
+	if ty < 0:
+		ty = ty * -1
+		
+	totalBlocks = tx * tz * ty
+	
+	blockCount = 0
+	lastPercent = -5
+	
 	for x in xrange(box.minx, box.maxx):
 		for z in xrange(box.minz, box.maxz):	
 			for y in xrange(box.miny, box.maxy):
 				block = level.blockAt(x,y,z)
+				blockCount = blockCount + 1
+				
+				currPercent = ((blockCount * 100) / totalBlocks)
+				
+				
+				if (currPercent - lastPercent) > 1:
+					lastPercent = currPercent
+					print "Scanning blocks :  " + str(lastPercent) + "% done"
+				
 				if(block == 0):
 					continue
-				
-				
+					
 				if((basicb and block in basic) or (containersb and block in containers) or (doorsb and block in doors) or
 					(sourcesb and block in sources) or (railsb and block in rails) or (miscb and block in misc) or
 					(slimestoneb and block in slimestone)):
@@ -167,29 +237,12 @@ def perform(level, box, options):
 						total[ identifier ][ data ] = 0
 					total[ identifier ][ data ]+=1
 	
-	#Entities
-	if cartsb:
-		for (chunk, slices, point) in level.getChunkSlices(box):
-			for e in chunk.Entities:
-				x = e["Pos"][0].value
-				y = e["Pos"][1].value
-				z = e["Pos"][2].value
-
-				if x >= box.minx and x < box.maxx and y >= box.miny and y < box.maxy and z >= box.minz and z < box.maxz:
-					id = e["id"].value
-				
-					if id in carts:
-						identifier = idtoname(id)
-						data = id
-					if not identifier in total:
-						total[ identifier ] = {}
-					if not data in total[ identifier ]:
-						total[ identifier ][ data ] = 0
-					total[ identifier ][ data ]+=1
+	
+	print 'finished scanning blocks'
+	
+	print 'finished scanning!'
 	
 	
-	
-	print 'finished scanning'
 	tableview = TableView(columns=[TableColumn("Block",400),TableColumn("Count",70),
 	TableColumn("Stack",70),TableColumn("Items",70),TableColumn("Price in dust",70)])
 	
@@ -208,7 +261,16 @@ def perform(level, box, options):
 				else:
 					price = costinrd(block)*count
 				totalPrice+=price
-				res.append( [" - " + alphaMaterials[block, data].name, str(count), str(count/64), str(count-((count/64)*64)), str(price)] )
+				
+				#if block is entity (cart) it mantains its normal name
+				#otherwise the block display name is referenced using id + data value
+				name = ""
+				if block in carts:
+					name = idtoname(block)
+				else:
+					name = alphaMaterials[block, data].name
+				
+				res.append( [" - " + name, str(count), str(count/64), str(count-((count/64)*64)), str(price)] )
 				text+=str(str(alphaMaterials[block, data].name)+"; "+str(count)+"; "+str(count/64)+"; "+str(count-((count/64)*64))+"; "+str(price)+";\n")
 	else:
 		for (name, v) in total.iteritems():
